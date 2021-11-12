@@ -1,5 +1,5 @@
 {
-  "name": "node-cli-ts-template",
+  "name": "map-game",
   "version": "1.0.0",
   "main": "bin/index.js",
   "author": "Joel Huggett",
