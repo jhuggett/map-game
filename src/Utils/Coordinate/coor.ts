@@ -55,4 +55,19 @@ export class Coor {
     const yRange = range(point.y - distance, point.y + distance)
     return xRange.map( (x, i) => new Coor(x, yRange[i]) )
   }
+
+  asArray() {
+    return [this.x, this.y]
+  }
+
+  toString() {
+    return `(x:${this.x}, y: ${this.y})`
+  }
+
+  static fromString(str: string) : Coor {
+    return new Coor(
+      +str.split(',')[0].split(':')[1],
+      +str.split(',')[1].split(':')[1].slice(0, -1)
+    )
+  }
 }

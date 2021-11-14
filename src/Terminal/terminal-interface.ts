@@ -12,7 +12,7 @@ const createTerminalInteractor = (slice: TerminalSlice) => {
   return new TerminalInteractor(slice)
 }
 
-class TerminalInteractor {
+export class TerminalInteractor {
   start: Coor
   end: Coor
 
@@ -21,15 +21,6 @@ class TerminalInteractor {
     this.end = slice.end
 
     this.cursor.move.to(this.start)
-  }
-
-  clear() {
-    range(this.start.x, this.end.x).forEach((x) => {
-      range(this.start.y, this.end.y).forEach(y => {
-        this.cursor.move.to(new Coor(x, y))
-        this.write(" ")
-      })
-    })
   }
 
   clearScreen() {
@@ -94,6 +85,61 @@ class TerminalInteractor {
         }
       }
     },
+  }
+
+  coloring = {
+    colors: {
+      black: "\u001b[30m",
+      red: "\u001b[31m",
+      green: "\u001b[32m",
+      yellow: "\u001b[33m",
+      blue: "\u001b[34m",
+      bgBlue: "\u001b[44m",
+      bgGreen: "\u001b[42m",
+      reset: "\u001b[0m"
+    },
+    red: (content: string) => {
+        return this.coloring.colors.red + content + this.coloring.colors.reset
+    },
+    green: (content: string) => {
+        return this.coloring.colors.green + content + this.coloring.colors.reset
+    },
+    yellow: (content: string) => {
+        return this.coloring.colors.yellow + content + this.coloring.colors.reset
+    },
+    blue: (content: string) => {
+        return this.coloring.colors.blue + content + this.coloring.colors.reset
+    },
+
+    bgBlue: (content: string) => {
+        return this.coloring.colors.bgBlue + content + this.coloring.colors.reset
+    },
+
+    bgGreen: (content: string) => {
+        return this.coloring.colors.bgGreen + content + this.coloring.colors.reset
+    },
+    fg256: (content, id: number) => {
+      return `\u001b[38;5;${id}m` + content + this.coloring.colors.reset
+    },
+    bg256: (content, id: number) => {
+      return `\u001b[48;5;${id}m` + content + this.coloring.colors.reset
+    }
+  }
+
+  reactToKeyPress = async (callback?: (code: Buffer) => boolean) : Promise<Buffer> => {
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+
+    return new Promise( (resolve) => {
+        return process.stdin.once('data', (data) => {
+            process.stdin.setRawMode(false)
+            process.stdin.pause()
+            if (callback && callback(data)) {
+                this.reactToKeyPress(callback)
+            }
+            resolve(data)
+            })
+        })
   }
 }
 
