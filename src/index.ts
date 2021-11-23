@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { TerminalInterface, TerminalInteractor } from "./Terminal/terminal-interface"
+import { TerminalInterface, TerminalInteractor, TerminalRenderer } from "./Terminal/terminal-interface"
 import { Coor } from "./Utils/Coordinate"
 import { GrowthMap, GrowthPointData, Landmass, LandmassPoint } from "./Utils/Maps/growth-map"
 import { range } from "./Utils/Coordinate/misc"
@@ -9,38 +9,102 @@ import { KDTree, KDTreeInput } from "./Utils/KDTree"
 const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPoint>, offset) => {
   const { coloring, cursor } = interactor
 
-  let rendering = ''
-
   const xOffset = offset.x
   const yOffset = offset.y
 
-  range(interactor.start.y, interactor.end.y - 1).forEach(y => {
+  interactor.resetCursor()
 
-    if (rendering != '') rendering += '\n'
-    range(interactor.start.x, Math.floor((interactor.end.x) / 2 - 1)).forEach(x => {
-      const land = map.find([x + xOffset, y + yOffset])?.value
-      if (land?.partOfCoastalRing && land.partOfCoastalRing.isBeach) {
-        rendering += coloring.bg256('[]', land.partOfCoastalRing.color)
-      } else if (land?.partOfCoastalRing) {
-        rendering += coloring.bg256('  ', land.partOfCoastalRing.color)
-      } else if (land) {
-        rendering += coloring.bg256(coloring.fg256('  ', land.landmass.color), land.landmass.color)
+  let numberOfWrites = 0
+  
+  for (let y = interactor.start.y; y < interactor.end.y; y++) {
+
+    for (let x = interactor.start.x; x + 2 <= (interactor.end.x); x += 2) {
+      //console.log({x, y, xOffset, yOffset, start: interactor.start, end: interactor.end});
+      
+      const point = new Coor(Math.floor((x - 1) / 2) + xOffset, y + yOffset)
+
+      const land = map.find(point.asArray())
+
+      if (land) {
+        const content = interactor.coloring.bg256(' ', 76)
+
+        interactor.write(content).write(content)
       } else {
-        rendering += coloring.bg256('  ', 17)
+        const content = interactor.coloring.bg256(' ', 25)
+
+        interactor.write(content).write(content)
+      }
+
+      numberOfWrites += 2
+
+    }
+    if (interactor.width()  % 2) {
+      interactor.write(' ')
+      numberOfWrites += 1
+    }
+
+  }
+
+  //console.log(interactor.pixels.all().map(i => i.value.content).join(''));
+  
+
+  return
+
+  range(interactor.start.y, interactor.end.y - 1).forEach(y => {
+    console.log({
+      y
+    });
+    
+    range(interactor.start.x, Math.floor((interactor.end.x) / 2 - 1)).forEach(x => {
+      console.log({x});
+      
+      const land = map.find([x + xOffset, y + yOffset])?.value
+      // if (land?.partOfCoastalRing && land.partOfCoastalRing.isBeach) {
+      //   rendering += coloring.bg256(`${land.distanceToWater}`.length > 1 ? `${land.distanceToWater}` : `${land.distanceToWater}-`, land.partOfCoastalRing.color)
+      // } else if (land?.partOfCoastalRing) {
+      //   rendering += coloring.bg256(`${land.distanceToWater}`.length > 1 ? `${land.distanceToWater}` : `${land.distanceToWater}-`, land.partOfCoastalRing.color)
+      // } else if (land) {
+      //   rendering += coloring.bg256(`${land.distanceToWater}`.length > 1 ? `${land.distanceToWater}` : `${land.distanceToWater}-`, land.landmass.color)
+      // } else {
+      //   rendering += coloring.bg256('  ', 17)
+      // }
+
+      if (land) {
+        console.log('land');
+        
+        interactor.write(coloring.bg256(' ', land.landmass.color))
+        interactor.write(coloring.bg256(' ', land.landmass.color))
+      } else {
+        console.log('no land');
+        
+        interactor.write(coloring.bg256(' ', 17))
+        interactor.write(coloring.bg256(' ', 17))
       }
     })
-    if (interactor.end.x % 2) rendering += ' '
+    if (interactor.end.x % 2) {
+      console.log('nada');
+      
+      interactor.write(' ')
+      interactor.write(' ')
+    }
   })
-  interactor.write(rendering)
+  //interactor.write(rendering)
 }
 
-const mapInteraction = async (term: TerminalInteractor) => {
-  const { cursor } = term
+/*
+TODOs:
+  - Elevation
+  - Mountains
+  - Land Selector Ui
+  - Start a town
+*/
+
+const mapInteraction = async () => {
   const growthMap = new GrowthMap()
 
   console.log("growing...");
   
-  growthMap.growToSize(25000)
+  growthMap.growToSize(10000)
 
   console.log('pruning scaffolding...');
   
@@ -65,6 +129,10 @@ const mapInteraction = async (term: TerminalInteractor) => {
   console.log('finding coastal rings...');
 
   landmasses.forEach(landmass => landmass.getCoastalRings())
+
+  console.log('calculating distance to water...');
+  
+  landmasses.forEach(landmass => landmass.distanceToWater())
   
   console.log('building render tree...');
   
@@ -79,8 +147,35 @@ const mapInteraction = async (term: TerminalInteractor) => {
     flattenedAllPoints
   )
 
+  const termRenderer = new TerminalRenderer()
 
-  
+  const width = termRenderer.width()
+  const height = termRenderer.height()
+
+  // const term = new TerminalInteractor({
+  //   start: new Coor(40, 40),
+  //   end: new Coor(termRenderer.width(), termRenderer.height())
+  // })
+
+  const middle = {
+    x: Math.floor(width / 2),
+    y: Math.floor(height / 2)
+  }
+
+  const viewWidth = width * .75
+  const viewHeight = height * .75
+
+  const halfViewWidth = Math.floor(viewWidth / 2)
+  const halfViewHeight = Math.floor(viewHeight / 2)
+
+
+  const term = new TerminalInteractor({
+    start: new Coor(middle.x - halfViewWidth, middle.y - halfViewHeight),
+    end: new Coor(middle.x + halfViewWidth, middle.y + halfViewHeight)
+  })
+
+
+  termRenderer.pushInteractor(term)
 
   let offset = {
     x: 0, 
@@ -88,9 +183,10 @@ const mapInteraction = async (term: TerminalInteractor) => {
   }
 
   while (true) {
-    cursor.move.to(new Coor(0, 0))
     
     renderMap(term, fullTree, offset)
+
+    termRenderer.render()
 
     const key = await term.reactToKeyPress()
 
@@ -121,17 +217,27 @@ const mapInteraction = async (term: TerminalInteractor) => {
 }
 
 (async () => {
+
+  const termRenderer = new TerminalRenderer()
+
+  termRenderer.hideCaret()
+  termRenderer.setRawMode(true)
   
   const term = TerminalInterface.interactor
   
-
-
   term.clearScreen()
   
-  
-
-  await mapInteraction(term)
-
-  
+  await mapInteraction()
 
 })()
+
+process.on("exit", () => {
+  const termRenderer = new TerminalRenderer()
+
+  termRenderer.showCaret()
+  termRenderer.setRawMode(false)
+  termRenderer.clearScreen()
+
+  console.log("Goodbye");
+  
+})

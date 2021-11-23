@@ -1,5 +1,6 @@
 import { Coor } from "../Utils/Coordinate"
 import { range } from "../Utils/Coordinate/misc"
+import { KDTree } from "../Utils/KDTree"
 
 
 
@@ -12,15 +13,47 @@ const createTerminalInteractor = (slice: TerminalSlice) => {
   return new TerminalInteractor(slice)
 }
 
+
+interface TerminalPixel {
+  location: Coor
+  content: string
+}
+
 export class TerminalInteractor {
   start: Coor
   end: Coor
+
+  cursorLocation: Coor
+
+  pixels: KDTree<TerminalPixel>
 
   constructor(slice: TerminalSlice) {
     this.start = slice.start
     this.end = slice.end
 
-    this.cursor.move.to(this.start)
+    let points: TerminalPixel[] = []
+
+    range(this.start.y, this.end.y - 1).forEach(y => {
+      range(this.start.x, this.end.x - 1).forEach(x => {
+        points.push({
+          location: new Coor(x, y),
+          content: 'x'
+        })
+      })
+    })
+
+    let actualSize = (this.end.x - this.start.x) * (this.end.y - this.start.y)
+
+    
+
+    this.pixels = new KDTree(points.map(i => ({ point: i.location.asArray(), value: i })))
+
+    this.cursorLocation = new Coor(this.start.x, this.start.y)
+
+    this.resetCursor()
+
+
+
   }
 
   clearScreen() {
@@ -48,7 +81,35 @@ export class TerminalInteractor {
     return this.end.y - this.start.y
   }
 
+  center() {
+    return new Coor(
+      Math.floor(this.width() / 2),
+      Math.floor(this.height() / 2)
+    )
+  }
+
+  resetCursor() {
+    this.cursorLocation = new Coor(this.start.x, this.start.y)
+  }
+
   write(message: string) {
+    
+    const pixel = this.pixels.find(this.cursorLocation.asArray())
+    if (pixel) {
+      pixel.value.content = message
+      if (this.cursorLocation.x + 1 < this.end.x) {
+        this.cursor.move.right()
+      } else if (this.cursorLocation.y + 1 < this.end.y) {
+        this.cursor.move.down()
+        this.cursorLocation.x = this.start.x
+      }
+    }
+
+    //console.log({cursorLocation: this.cursorLocation, message, start: this.start, end: this.end});
+    
+
+
+    return this
     process.stdout.write(message)
     return this
   }
@@ -57,20 +118,20 @@ export class TerminalInteractor {
     move: {
       to: (point: Coor) => {
         if (this.withinBounds(point)) {
-          this.write(`\u001b[${point.y};${point.x}H`)
+          this.cursorLocation = new Coor(point.x, point.y)
         }
       },
       up: (amount: number = 1) => {
-        this.write(`\u001b[${amount}A`)
+        this.cursorLocation.y -= amount
       },
       left: (amount: number = 1) => {
-          this.write(`\u001b[${amount}D`)
+        this.cursorLocation.x -= amount
       },
       right: (amount: number = 1) => {
-          this.write(`\u001b[${amount}C`)
+        this.cursorLocation.x += amount
       },
       down: (amount: number = 1) => {
-          this.write(`\u001b[${amount}B`)
+        this.cursorLocation.y += amount
       },
       by: (x: number, y: number) => {
         if (x < 0) {
@@ -126,9 +187,12 @@ export class TerminalInteractor {
     }
   }
 
+  
+
   reactToKeyPress = async (callback?: (code: Buffer) => boolean) : Promise<Buffer> => {
     process.stdin.setRawMode(true)
     process.stdin.resume()
+    
 
     return new Promise( (resolve) => {
         return process.stdin.once('data', (data) => {
@@ -142,6 +206,136 @@ export class TerminalInteractor {
         })
   }
 }
+
+
+export class TerminalRenderer {
+  stack: TerminalInteractor[] = []
+
+  pixels: KDTree<TerminalPixel>
+
+  width() {
+    return process.stdout.columns || 0
+  }
+  height() {
+    return process.stdout.rows || 0
+  }
+
+  constructor() {
+    this.loadPixels()
+  }
+
+  pushInteractor(interactor: TerminalInteractor) {
+    this.stack.push(interactor)
+    this.loadPixels()
+  }
+
+  loadPixels() {
+    const listOfListOfPixels = this.stack.map(i => i.pixels.all())
+    let listOfPixels = []
+    listOfListOfPixels.forEach(list => {
+      list.forEach(item => {
+        listOfPixels.push(item)
+      })
+    })
+    this.pixels = new KDTree<TerminalPixel>(listOfPixels)
+  }
+
+  render() {
+    const width = this.width()
+    const height = this.height()
+
+    this.cursor.move.to(new Coor(0, 0))
+
+    let rendering = ''
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const pixel = this.pixels.find([x, y])
+
+        if (pixel) {
+          rendering += pixel.value.content
+        } else {
+          rendering += ' '
+        }
+      }
+    }
+    this.write(rendering)
+  }
+
+
+  setRawMode(to: boolean) {
+    process.stdin.setRawMode(to)
+  }
+
+  withinBounds(point: Coor) {
+    return this.withinWidth(point.x) && this.withinHeight(point.y)
+  }
+
+  withinWidth(x: number) {
+    return 0 <= x && x < this.width()
+  }
+
+  withinHeight(y: number) {
+    return 0 <= y && y < this.height()
+  }
+
+  clearScreen() {
+    process.stdout.write("\033[2J")
+    this.write("\033[H")
+  }
+
+  write(message: string) {
+    process.stdout.write(message)
+    return this
+  }
+
+  hideCaret = () => {
+    process.stderr.write("\u001B[?25l")
+    
+    return this
+  }
+
+  showCaret = () => {
+    process.stderr.write("\u001B[?25h")
+    
+    return this
+}
+
+  cursor = {
+    move: {
+      to: (point: Coor) => {
+        if (this.withinBounds(point)) {
+          this.write(`\u001b[${point.y};${point.x}H`)
+        }
+      },
+      up: (amount: number = 1) => {
+        this.write(`\u001b[${amount}A`)
+      },
+      left: (amount: number = 1) => {
+          this.write(`\u001b[${amount}D`)
+      },
+      right: (amount: number = 1) => {
+          this.write(`\u001b[${amount}C`)
+      },
+      down: (amount: number = 1) => {
+          this.write(`\u001b[${amount}B`)
+      },
+      by: (x: number, y: number) => {
+        if (x < 0) {
+          this.cursor.move.left(x * -1)
+        } else {
+          this.cursor.move.right(x)
+        }
+        if (y < 0) {
+          this.cursor.move.up(y * -1)
+        } else {
+          this.cursor.move.down(y)
+        }
+      }
+    },
+  }
+}
+
 
 interface TerminalInterface {
   width(): number

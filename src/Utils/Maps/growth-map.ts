@@ -136,8 +136,6 @@ export class GrowthMap {
 
     return landmasses
   }
-
-  
 }
 
 export interface HasPoints {
@@ -149,6 +147,8 @@ export interface LandmassPoint {
   landmass: Landmass
   isCoastal: boolean
   partOfCoastalRing: CostalRing | null
+  elevation: number
+  distanceToWater: number
 }
 
 export interface BodyOfWater extends HasPoints {}
@@ -165,6 +165,8 @@ export class Landmass {
 
   color: number = getRandomNumber(0, 256)
 
+  highestDistanceToWater = -1
+
   constructor(points: Coor[]) {
     this.points = new KDTree(
       points.map(point => ({
@@ -173,7 +175,9 @@ export class Landmass {
           coor: point,
           landmass: this,
           isCoastal: false,
-          partOfCoastalRing: null
+          partOfCoastalRing: null,
+          elevation: 1.0,
+          distanceToWater: -1
         } as LandmassPoint
       }))
     )
@@ -212,7 +216,9 @@ export class Landmass {
               coor: ap,
               isCoastal: false,
               landmass: this,
-              partOfCoastalRing: null
+              partOfCoastalRing: null,
+              elevation: 1.0,
+              distanceToWater: -1
             })
           }
         }
@@ -226,6 +232,35 @@ export class Landmass {
 
     this.clearCostalPoints()
     this.clearCoastalRings()
+  }
+
+
+  distanceToWater() {
+    let currentDistance = 1
+
+    this.costalPoints.all().map(i => i.value.distanceToWater = 0)
+
+    let currentSet: Set<string> = new Set(this.costalPoints.all().map(i => i.value.coor.toString()))
+    let nextSet: Set<string> = new Set()
+
+    while (currentSet.size > 0) {
+      currentSet.forEach(item => {
+        const coor = Coor.fromString(item)
+        coor.getAdjacentCoors().forEach(adjCoor => {
+          const point = this.points.find(adjCoor.asArray())
+          if (point && point.value.distanceToWater < 0) {
+            point.value.distanceToWater = currentDistance
+            nextSet.add(point.value.coor.toString())
+          }
+        })
+      })
+
+      currentSet = new Set([...nextSet])
+      nextSet.clear()
+      currentDistance += 1
+    }
+
+    this.highestDistanceToWater = currentDistance - 1
   }
 
 
