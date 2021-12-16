@@ -37,7 +37,7 @@ export class TerminalInteractor {
       range(this.start.x, this.end.x - 1).forEach(x => {
         points.push({
           location: new Coor(x, y),
-          content: 'x'
+          content: ' '
         })
       })
     })
@@ -54,6 +54,11 @@ export class TerminalInteractor {
 
 
 
+  }
+
+  return() {
+    //this.cursor.move.down()
+    this.cursorLocation.x = this.start.x
   }
 
   clearScreen() {
@@ -196,7 +201,7 @@ export class TerminalInteractor {
 
     return new Promise( (resolve) => {
         return process.stdin.once('data', (data) => {
-            process.stdin.setRawMode(false)
+            //process.stdin.setRawMode(false)
             process.stdin.pause()
             if (callback && callback(data)) {
                 this.reactToKeyPress(callback)

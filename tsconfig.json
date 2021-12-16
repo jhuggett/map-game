@@ -7,6 +7,10 @@
   "esModuleInterop": true,
   "allowSyntheticDefaultImports": true,
   "compilerOptions": {
+      "target": "es5",
+      "lib": [
+        "es2019"
+      ],
       "outDir": "bin",
       "resolveJsonModule": true,
       "noImplicitUseStrict": true,

@@ -1,9 +1,9 @@
 import { Coor } from "../Coordinate"
-import { shuffle, getRandomBool, getRandomNumber } from "../Randomization"
+import { shuffle, getRandomBool, getRandomNumber, getRandomItem } from "../Randomization"
 import { KDTree, KDTreeInput } from "../KDTree"
 
 export enum LandType {
-  land, scaffold, coast, mountain
+  land, scaffold, coast, mountain, snowcapped
 }
 
 export class GrowthPointData {
@@ -149,6 +149,10 @@ export interface LandmassPoint {
   partOfCoastalRing: CostalRing | null
   elevation: number
   distanceToWater: number
+  distanceToMountain: number
+  landType: LandType
+
+  river: River | null
 }
 
 export interface BodyOfWater extends HasPoints {}
@@ -177,7 +181,10 @@ export class Landmass {
           isCoastal: false,
           partOfCoastalRing: null,
           elevation: 1.0,
-          distanceToWater: -1
+          distanceToWater: -1,
+          distanceToMountain: -1,
+          landType: LandType.land,
+          river: null
         } as LandmassPoint
       }))
     )
@@ -218,7 +225,10 @@ export class Landmass {
               landmass: this,
               partOfCoastalRing: null,
               elevation: 1.0,
-              distanceToWater: -1
+              distanceToWater: -1,
+              distanceToMountain: -1,
+              landType: LandType.land,
+              river: null
             })
           }
         }
@@ -262,6 +272,8 @@ export class Landmass {
 
     this.highestDistanceToWater = currentDistance - 1
   }
+
+
 
 
   private costalRings: {
@@ -334,6 +346,7 @@ export class Landmass {
       
       ;[this.costalRings.beach, ...this.costalRings.lakes].forEach(ring => {
         ring.points.all().forEach(point => {
+          point.value.landType = LandType.coast
           point.value.partOfCoastalRing = ring
         })
       })
@@ -341,7 +354,280 @@ export class Landmass {
     return this.costalRings
   }
 
+  mountainRanges: MoutainRange[] = []
+
+    growMountains() {
+
+      const distanceThreshold = 3
+
+      const p = this.points.all().filter(i => i.value.distanceToWater > distanceThreshold)
+      
+      if (p.length == 0) return
+
+      let fertilePoints = new KDTree(p)
+      
+      let fertileRegions: { points: KDTree<LandmassPoint> }[] = seperatePoints(fertilePoints).map(i => ({ points: i }))
+
+      let mountainRanges = []
+
+
+      fertileRegions.forEach(region => {
+        let lowestLevel = 1000
+        let highestLevel = 0
+
+        
+
+
+        region.points.all().forEach(point => {
+          if (point.value.distanceToWater > highestLevel) highestLevel = point.value.distanceToWater
+          if (point.value.distanceToWater < lowestLevel) lowestLevel = point.value.distanceToWater
+        })
+
+        if (highestLevel - lowestLevel < 2) return
+
+        let snowCapped: KDTreeInput<LandmassPoint>[] = []
+        let regualar: KDTreeInput<LandmassPoint>[] = []
+
+        region.points.all().forEach(point => {
+          if (point.value.distanceToWater == highestLevel) {
+            point.value.landType = LandType.snowcapped
+            snowCapped.push(point)
+          } else if (point.value.distanceToWater == highestLevel - 1) {
+            point.value.landType = LandType.mountain
+            regualar.push(point)
+          }
+        })
+
+        this.mountainRanges.push({
+          snowcapped: new KDTree<LandmassPoint>(snowCapped),
+          regualar: new KDTree<LandmassPoint>(regualar)
+        })
+
+      })
+
+    }
+
+    rivers: River[] = []
+
+    findDistanceToMountains() {
+      let currentDistance = 1
+
+      this.mountainRanges.forEach(mountain => {
+        const aggregatePoints = new Set<string>()
+
+        currentDistance = 1
+
+        let curr: LandmassPoint[] = nextPointsSpread(mountain.regualar.all().map(i => i.value).map(i => i.coor), aggregatePoints).map(i => this.points.find(i.asArray())?.value).filter(i => !!i)
+
+        while (curr.length > 0) {
+          curr.forEach(p => {
+            if (currentDistance < p.distanceToMountain || p.distanceToMountain === -1) {
+              p.distanceToMountain = currentDistance
+            }
+          })
+          curr = nextPointsSpread(curr.map(i => i.coor), aggregatePoints).map(i => this.points.find(i.asArray())?.value).filter(i => !!i)
+          currentDistance++
+        }
+      })
+    }
+
+    calculateElevation() {
+      this.points.all().forEach(p => {
+        p.value.elevation = p.value.distanceToWater
+      })
+    }
+    
+    generateRivers() {
+
+      this.mountainRanges.forEach(r => {
+        let pointsAroundMountain = r.regualar.all().flatMap(i => {
+          return i.value.coor.getAdjacentCoors().map(t => {
+            const pToCheck = this.points.find(t.asArray())
+            if (pToCheck && pToCheck.value.landType == LandType.land) {
+              return pToCheck.value
+            }
+          })
+        }).filter(i => !!i).map(i => ({
+          point: i.coor.asArray(),
+          value: i
+        }))
+
+        
+        
+
+        let riverStarts: KDTreeInput<LandmassPoint>[] = []
+
+        const numOfRivers = 3
+
+        const shuffledPoints = shuffle(pointsAroundMountain)
+
+        shuffledPoints.slice(-numOfRivers).forEach(i => riverStarts.push(i))
+
+        riverStarts.forEach(start => {
+
+          const newRiverPoints: KDTreeInput<LandmassPoint>[] = []
+
+
+          const first = start.value
+
+          let last = start.value
+
+
+          const newRiver = {
+            start: this.points.find(first.coor.asArray()).value,
+            end: this.points.find(last.coor.asArray()).value,
+            points: new KDTree(newRiverPoints),
+            linkedPoints: [] as Linked<LandmassPoint>[]
+        }
+
+          let allPoints: LandmassPoint[] = []
+
+          // WE NEED ELEVATION!!! and we got it!
+
+          let current = start.value
+
+          let hitWater = false
+
+          while (!hitWater) {
+
+            if (current.elevation === 0) hitWater = true
+
+            const point = this.points.find(current.coor.asArray())
+
+            point.value.river = newRiver
+
+            allPoints.push(point.value)
+
+            const prevPoint = newRiver.linkedPoints[newRiver.linkedPoints.length - 1]
+            if (prevPoint) {
+              prevPoint.next = point.value
+              newRiver.linkedPoints.push({
+                previous: prevPoint.current,
+                current: point.value,
+                next: null
+              })
+            } else {
+              newRiver.linkedPoints.push({
+                previous: null,
+                current: point.value,
+                next: null
+              })
+            }
+
+            let lowestElevation = 99999999999
+
+            let possibleNext: LandmassPoint[] = []
+
+            point.value.coor.getAdjacentCoors().forEach(i => {
+              const p = this.points.find(i.asArray())
+
+              p && possibleNext.push(p.value)
+
+              if (p && p.value.elevation < lowestElevation) lowestElevation = p.value.elevation
+            })
+
+            possibleNext = shuffle(possibleNext.filter(i => i.elevation === lowestElevation))
+
+            const next = getRandomItem(possibleNext)
+
+            current = next
+            
+          }
+
+          
+
+          newRiver.points = new KDTree(newRiverPoints)
+          newRiver.end = this.points.find(last.coor.asArray()).value
+
+          this.rivers.push(newRiver)
 
 
 
+        })
+
+
+      })
+
+
+    }
+  }
+
+
+
+  interface River {
+    start: LandmassPoint
+    end: LandmassPoint
+    points: KDTree<LandmassPoint>
+    linkedPoints: Linked<LandmassPoint>[]
+  }
+
+  interface MoutainRange {
+    snowcapped: KDTree<LandmassPoint>
+    regualar: KDTree<LandmassPoint>
+  }
+
+
+interface Linked<T> {
+  previous?: T
+  current: T
+  next?: T
+}
+
+
+
+
+
+const nextPointsSpread = (currentRing: Coor[], pointsToExclude: Set<string>) => {
+  let nextRing: Coor[] = []
+
+  currentRing.forEach(point => {
+    point.getAdjacentCoors().forEach(adjacentCoor => {
+      if (!pointsToExclude.has(adjacentCoor.toString())) {
+        nextRing.push(adjacentCoor)
+        pointsToExclude.add(adjacentCoor.toString())
+      }
+    })
+  })
+
+  return nextRing
+}
+
+const seperatePoints = (points: KDTree<LandmassPoint>) : KDTree<LandmassPoint>[] => {
+  let fertileRegions: KDTree<LandmassPoint>[] = []
+
+  const allGatheredPoints = new Set<string>()
+
+  points.all().forEach(point => {
+    if (allGatheredPoints.has(point.value.coor.toString())) return
+
+    const gatheredPoints = new Set<string>()
+
+    let currPoints = new Set<string>()
+    let nextPoints = new Set<string>()
+
+    currPoints.add(point.value.coor.toString())
+
+    while (currPoints.size > 0) {
+
+      currPoints.forEach(i => {
+        const pointToCheck = Coor.fromString(i)
+
+        gatheredPoints.add(i)
+        allGatheredPoints.add(i)
+
+        pointToCheck.getAdjacentCoors()
+        .filter(t => !!points.find(t.asArray()) && !gatheredPoints.has(t.toString()))
+        .forEach(t => nextPoints.add(t.toString()))
+      })
+
+      currPoints = new Set<string>([...nextPoints])
+      nextPoints.clear()
+    }
+
+    fertileRegions.push(
+      new KDTree([...gatheredPoints].map(t => points.find(Coor.fromString(t).asArray())))
+    )
+  })
+
+  return fertileRegions
 }
