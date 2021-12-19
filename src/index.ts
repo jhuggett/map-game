@@ -3,7 +3,7 @@
 import { TerminalInterface, TerminalInteractor, TerminalRenderer } from "./Terminal/terminal-interface"
 import { Coor } from "./Utils/Coordinate"
 import { GrowthMap, GrowthPointData, Landmass, LandmassPoint, LandType } from "./Utils/Maps/growth-map"
-import { range } from "./Utils/Coordinate/misc"
+import { range, Direction } from "./Utils/Coordinate/misc"
 import { KDTree, KDTreeInput } from "./Utils/KDTree"
 
 // │
@@ -28,6 +28,14 @@ import { KDTree, KDTreeInput } from "./Utils/KDTree"
 //
 
 
+const pipe = {
+  horizontal: '─',
+  vertical: '│',
+  topAndRightCorner: '└',
+  topAndLeftCorner: '┘',
+  bottomAndRightCorner: '┌',
+  bottomAndLeftCorner: '┐'
+}
 
 
 const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPoint>, offset) => {
@@ -58,13 +66,13 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
       if (land) {
         const e = land.distanceToWater
 
-        if (e < 10 && e > 0) {
-          item = interactor.coloring.fg256(` ${e}`, 250)
-        } else if (e > 0) {
-          item = interactor.coloring.fg256(e.toString().slice(0, 2), 250)
-        } else {
-          item = interactor.coloring.fg256(`  `, 22)
-        }
+        // if (e < 10 && e > 0) {
+        //   item = interactor.coloring.fg256(` ${e}`, 250)
+        // } else if (e > 0) {
+        //   item = interactor.coloring.fg256(e.toString().slice(0, 2), 250)
+        // } else {
+        //   item = interactor.coloring.fg256(`  `, 22)
+        // }
 
         
       }
@@ -73,17 +81,79 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
 
         item = interactor.coloring.fg256('≡≡', 25)
         
-        const link = land.river.linkedPoints.filter(i => i.current.coor.sameAs(land.coor))[0]
+        const link = land.river.linkedPoints.filter(i => i.value.coor.sameAs(land.coor))[0]
 
-        if (link?.next) {
-          if (link.next.coor.x == link.current.coor.x) {
-            // vertical step
-            item = interactor.coloring.fg256('│ ', 25)
-          } else {
-            // horizontal step
-            item = interactor.coloring.fg256('──', 25)
+        const previousCoor = link.previous?.value?.coor
+        const currentCoor = link.value.coor
+        const nextCoor = link.next?.value?.coor
+        
+
+        let fromDirection = Direction.north
+        let toDirection = Direction.south
+        
+        if (previousCoor) {
+          if (previousCoor.x < currentCoor.x) {
+            fromDirection = Direction.west
+          } else if (previousCoor.x > currentCoor.x) {
+            fromDirection = Direction.east
+          } else if (previousCoor.y < currentCoor.y) {
+            fromDirection = Direction.north
+          } else if (previousCoor.y > currentCoor.y) {
+            fromDirection = Direction.south
           }
         }
+
+        if (nextCoor) {
+          if (nextCoor.x < currentCoor.x) {
+            toDirection = Direction.west
+          } else if (nextCoor.x > currentCoor.x) {
+            toDirection = Direction.east
+          } else if (nextCoor.y < currentCoor.y) {
+            toDirection = Direction.north
+          } else if (nextCoor.y > currentCoor.y) {
+            toDirection = Direction.south
+          }
+        }
+
+        const choice = `${fromDirection || ''}${toDirection || ''}`
+
+        // `${}${}`: ''
+
+        const options: { [key: string]: string; } = {}
+        options[`${Direction.north}${Direction.south}`] = '│ '
+        options[`${Direction.south}${Direction.north}`] = '│ '
+
+        options[`${Direction.north}${Direction.east}`] = '└─'
+        options[`${Direction.east}${Direction.north}`] = '└─'
+
+        options[`${Direction.north}${Direction.west}`] = '┘ '
+        options[`${Direction.west}${Direction.north}`] = '┘ '
+
+        options[`${Direction.south}${Direction.east}`] = '┌─'
+        options[`${Direction.east}${Direction.south}`] = '┌─'
+
+        options[`${Direction.south}${Direction.west}`] = '┐ '
+        options[`${Direction.west}${Direction.south}`] = '┐ '
+        
+        options[`${Direction.east}${Direction.west}`] = '──'
+        options[`${Direction.west}${Direction.east}`] = '──'
+
+
+        item = interactor.coloring.fg256(options[choice] || (choice == '' && 'oo' || 'xx'), 25)
+
+        // if (link?.next) {
+        //   if (link.next.coor.x == link.current.coor.x) {
+        //     // vertical step
+        //     item = interactor.coloring.fg256('│ ', 25)
+        //   } else {
+        //     // horizontal step
+        //     item = interactor.coloring.fg256('──', 25)
+        //   }
+        // }
+
+        // if (link?.previous) {
+
+        // }
 
       } 
 
@@ -91,7 +161,7 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
         const content = interactor.coloring.bg256(item, 76)
         interactor.write(content).write('')
       } else if (land && land.landType == LandType.coast) {
-        const content = interactor.coloring.bg256(item, 221)
+        const content = interactor.coloring.bg256(item, 76) // 221
         interactor.write(content).write('')
       } else if (land && land.landType == LandType.mountain) {
         const content = interactor.coloring.bg256(item, 251)

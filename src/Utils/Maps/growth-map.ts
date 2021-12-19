@@ -439,11 +439,17 @@ export class Landmass {
     
     generateRivers() {
 
+      const allRiverPoints = new Set<string>()
+
       this.mountainRanges.forEach(r => {
+
+        const dupPoints = new Set<string>()
+
         let pointsAroundMountain = r.regualar.all().flatMap(i => {
           return i.value.coor.getAdjacentCoors().map(t => {
             const pToCheck = this.points.find(t.asArray())
-            if (pToCheck && pToCheck.value.landType == LandType.land) {
+            if (pToCheck && pToCheck.value.landType == LandType.land && !dupPoints.has(pToCheck.value.coor.toString())) {
+              dupPoints.add(pToCheck.value.coor.toString())
               return pToCheck.value
             }
           })
@@ -457,7 +463,11 @@ export class Landmass {
 
         let riverStarts: KDTreeInput<LandmassPoint>[] = []
 
-        const numOfRivers = 3
+        const numOfRivers = 100
+
+        // need to make sure that rives can't use the same point
+        // and river than hit another river needs to stop
+        // and somehow render intercected rivers
 
         const shuffledPoints = shuffle(pointsAroundMountain)
 
@@ -482,34 +492,41 @@ export class Landmass {
 
           let allPoints: LandmassPoint[] = []
 
-          // WE NEED ELEVATION!!! and we got it!
-
           let current = start.value
 
           let hitWater = false
 
-          while (!hitWater) {
+          let hitRiver = false
 
+          while (!hitWater && !hitRiver) {
+            if (allRiverPoints.has(current.coor.toString())) {
+              hitRiver = true
+              break;
+            }
             if (current.elevation === 0) hitWater = true
+            
 
             const point = this.points.find(current.coor.asArray())
 
             point.value.river = newRiver
 
+            allRiverPoints.add(point.value.coor.toString())
+
             allPoints.push(point.value)
 
             const prevPoint = newRiver.linkedPoints[newRiver.linkedPoints.length - 1]
             if (prevPoint) {
-              prevPoint.next = point.value
-              newRiver.linkedPoints.push({
-                previous: prevPoint.current,
-                current: point.value,
+              const newLink = {
+                previous: prevPoint,
+                value: point.value,
                 next: null
-              })
+              }
+              prevPoint.next = newLink
+              newRiver.linkedPoints.push(newLink)
             } else {
               newRiver.linkedPoints.push({
-                previous: null,
-                current: point.value,
+                previous: getRandomItem(point.value.coor.getAdjacentCoors().map(i => this.points.find(i.asArray())).filter(i => i && i.value.landType == LandType.mountain)),
+                value: point.value,
                 next: null
               })
             }
@@ -533,6 +550,48 @@ export class Landmass {
             current = next
             
           }
+
+          
+
+          const previousLast = newRiver.linkedPoints[newRiver.linkedPoints.length - 1]
+
+          if (!previousLast) return
+
+          if (hitWater) {
+            const endPoint = getRandomItem(newRiver.linkedPoints[newRiver.linkedPoints.length - 1].value.coor.getAdjacentCoors().filter(i => !this.points.find(i.asArray())))
+
+            const fakePoint: LandmassPoint = {
+              coor: endPoint,
+              distanceToMountain: 0,
+              distanceToWater: 0,
+              elevation: 0,
+              isCoastal: false,
+              landType: LandType.scaffold,
+              landmass: null,
+              partOfCoastalRing: null,
+              river: null
+            }
+
+            const newLast = {
+              previous: previousLast,
+              value: fakePoint,
+              next: null
+            }
+
+            previousLast.next = newLast
+          } else {
+            const newLast = {
+              previous: previousLast,
+              value: current,
+              next: null
+            }
+
+            previousLast.next = newLast
+          }
+          
+          
+
+          //newRiver.linkedPoints.push(newLast)
 
           
 
@@ -568,9 +627,9 @@ export class Landmass {
 
 
 interface Linked<T> {
-  previous?: T
-  current: T
-  next?: T
+  previous?: Linked<T>
+  value: T
+  next?: Linked<T>
 }
 
 

@@ -2,7 +2,10 @@ import { Coor } from "./coor"
 
 
 export enum Direction {
-    north, south, east, west
+    north = 'north',
+    south = 'south', 
+    east = 'east', 
+    west = 'west'
 }
 
 export function getDirectionsOtherThan(direction: Direction) : Array<Direction> {
