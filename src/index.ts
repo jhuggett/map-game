@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-import { TerminalInterface, TerminalInteractor, TerminalRenderer } from "./Terminal/terminal-interface"
+import { TerminalInterface } from "./Terminal"
 import { Coor } from "./Utils/Coordinate"
 import { GrowthMap, GrowthPointData, Landmass, LandmassPoint, LandType } from "./Utils/Maps/growth-map"
 import { range, Direction } from "./Utils/Coordinate/misc"
 import { KDTree, KDTreeInput } from "./Utils/KDTree"
+import { TerminalInteractor } from "./Terminal/interactor"
+import { TerminalRenderer } from "./Terminal/renderer"
+import { Size } from "./Utils/Size/2d"
 
 // │
 // ┤
@@ -31,11 +34,42 @@ import { KDTree, KDTreeInput } from "./Utils/KDTree"
 const pipe = {
   horizontal: '─',
   vertical: '│',
-  topAndRightCorner: '└',
-  topAndLeftCorner: '┘',
-  bottomAndRightCorner: '┌',
-  bottomAndLeftCorner: '┐'
+  topAndRight: '└',
+  topAndLeft: '┘',
+  bottomAndRight: '┌',
+  bottomAndLeft: '┐',
+  topRightAndLeft: '┴',
+  topRightAndBottom: '├',
+  topBottomAndLeft: '┤',
+  rightBottomAndLeft: '┬',
+  topRightBottomAndLeft: '┼'
 }
+
+// top right bottom left
+// x x o o
+
+function getRiverRenderer(symbols: any = pipe) {
+  const renderer: { [key: string]: string; } = {}
+
+  function add(key: string, value: string) {
+    renderer[key] = value
+  }
+
+  add('xoxo', `${symbols.vertical} `)
+  add('xxoo', `${symbols.topAndRight}${symbols.horizontal}`)
+  add('xoox', `${symbols.topAndLeft} `)
+  add('oxxo', `${symbols.bottomAndRight}${symbols.horizontal}`)
+  add('ooxx', `${symbols.bottomAndLeft} `)
+  add('oxox', `${symbols.horizontal}${symbols.horizontal}`)
+  add('xxxx', `${symbols.topRightBottomAndLeft}${symbols.horizontal}`)
+  add('xxxo', `${symbols.topRightAndBottom}${symbols.horizontal}`)
+  add('oxxx', `${symbols.rightBottomAndLeft}${symbols.horizontal}`)
+  add('xxox', `${symbols.topRightAndLeft}${symbols.horizontal}`)
+  add('xoxx', `${symbols.topBottomAndLeft} `)
+  
+  return renderer
+}
+
 
 
 const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPoint>, offset) => {
@@ -44,15 +78,17 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
   const xOffset = offset.x
   const yOffset = offset.y
 
+  const riverRenderer = getRiverRenderer()
+
   interactor.resetCursor()
 
 
 
   let numberOfWrites = 0
   
-  for (let y = interactor.start.y; y < interactor.end.y; y++) {
+  for (let y = interactor.start().y; y < interactor.end().y; y++) {
 
-    for (let x = interactor.start.x; x + 2 <= (interactor.end.x); x += 2) {
+    for (let x = interactor.start().x; x + 2 <= (interactor.end().x); x += 2) {
       //console.log({x, y, xOffset, yOffset, start: interactor.start, end: interactor.end});
 
       let item = '  '
@@ -88,73 +124,13 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
         const nextCoor = link.next?.value?.coor
         
 
-        let fromDirection = Direction.north
-        let toDirection = Direction.south
-        
-        if (previousCoor) {
-          if (previousCoor.x < currentCoor.x) {
-            fromDirection = Direction.west
-          } else if (previousCoor.x > currentCoor.x) {
-            fromDirection = Direction.east
-          } else if (previousCoor.y < currentCoor.y) {
-            fromDirection = Direction.north
-          } else if (previousCoor.y > currentCoor.y) {
-            fromDirection = Direction.south
-          }
-        }
+        let choice = ''
+        choice += currentCoor.north().sameAs(previousCoor) || currentCoor.north().sameAs(nextCoor) || map.find(currentCoor.north().asArray())?.value?.river?.linkedPoints.slice(-1)[0]?.next?.value?.coor?.sameAs(currentCoor) ? 'x' : 'o'
+        choice += currentCoor.east().sameAs(previousCoor) || currentCoor.east().sameAs(nextCoor) || !!map.find(currentCoor.east().asArray())?.value?.river?.linkedPoints.slice(-1)[0]?.next?.value?.coor?.sameAs(currentCoor) ? 'x' : 'o'
+        choice += currentCoor.south().sameAs(previousCoor) || currentCoor.south().sameAs(nextCoor) || !!map.find(currentCoor.south().asArray())?.value?.river?.linkedPoints.slice(-1)[0]?.next?.value?.coor?.sameAs(currentCoor) ? 'x' : 'o'
+        choice += currentCoor.west().sameAs(previousCoor) || currentCoor. west().sameAs(nextCoor) || !!map.find(currentCoor.west().asArray())?.value?.river?.linkedPoints.slice(-1)[0]?.next?.value?.coor?.sameAs(currentCoor) ? 'x' : 'o'
 
-        if (nextCoor) {
-          if (nextCoor.x < currentCoor.x) {
-            toDirection = Direction.west
-          } else if (nextCoor.x > currentCoor.x) {
-            toDirection = Direction.east
-          } else if (nextCoor.y < currentCoor.y) {
-            toDirection = Direction.north
-          } else if (nextCoor.y > currentCoor.y) {
-            toDirection = Direction.south
-          }
-        }
-
-        const choice = `${fromDirection || ''}${toDirection || ''}`
-
-        // `${}${}`: ''
-
-        const options: { [key: string]: string; } = {}
-        options[`${Direction.north}${Direction.south}`] = '│ '
-        options[`${Direction.south}${Direction.north}`] = '│ '
-
-        options[`${Direction.north}${Direction.east}`] = '└─'
-        options[`${Direction.east}${Direction.north}`] = '└─'
-
-        options[`${Direction.north}${Direction.west}`] = '┘ '
-        options[`${Direction.west}${Direction.north}`] = '┘ '
-
-        options[`${Direction.south}${Direction.east}`] = '┌─'
-        options[`${Direction.east}${Direction.south}`] = '┌─'
-
-        options[`${Direction.south}${Direction.west}`] = '┐ '
-        options[`${Direction.west}${Direction.south}`] = '┐ '
-        
-        options[`${Direction.east}${Direction.west}`] = '──'
-        options[`${Direction.west}${Direction.east}`] = '──'
-
-
-        item = interactor.coloring.fg256(options[choice] || (choice == '' && 'oo' || 'xx'), 25)
-
-        // if (link?.next) {
-        //   if (link.next.coor.x == link.current.coor.x) {
-        //     // vertical step
-        //     item = interactor.coloring.fg256('│ ', 25)
-        //   } else {
-        //     // horizontal step
-        //     item = interactor.coloring.fg256('──', 25)
-        //   }
-        // }
-
-        // if (link?.previous) {
-
-        // }
-
+        item = interactor.coloring.fg256(riverRenderer[choice] || (choice == '' && 'oo' || 'xx'), 25)
       } 
 
       if (land && land.landType == LandType.land) {
@@ -190,12 +166,12 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
 
   return
 
-  range(interactor.start.y, interactor.end.y - 1).forEach(y => {
+  range(interactor.start().y, interactor.end().y - 1).forEach(y => {
     console.log({
       y
     });
     
-    range(interactor.start.x, Math.floor((interactor.end.x) / 2 - 1)).forEach(x => {
+    range(interactor.start().x, Math.floor((interactor.end().x) / 2 - 1)).forEach(x => {
       console.log({x});
       
       const land = map.find([x + xOffset, y + yOffset])?.value
@@ -221,7 +197,7 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
         interactor.write(coloring.bg256(' ', 17))
       }
     })
-    if (interactor.end.x % 2) {
+    if (interactor.end().x % 2) {
       console.log('nada');
       
       interactor.write(' ')
@@ -233,44 +209,81 @@ const renderMap = async (interactor: TerminalInteractor , map: KDTree<LandmassPo
 
 /*
 TODOs:
-  - Elevation
-  - Mountains
   - Land Selector Ui
   - Start a town
 */
+
+
+function termVerticalCenter(term: TerminalRenderer) {
+  return Math.floor(term.height() / 2)
+}
+
+function termHorizontalCenter(term: TerminalRenderer) {
+  return Math.floor(term.width() / 2)
+}
+
+function termCenter(term: TerminalRenderer) {
+  return new Coor(termHorizontalCenter(term), termVerticalCenter(term))
+}
+
+function createInteraction(at: Coor, size: Size, term: TerminalRenderer) {
+  return new TerminalInteractor({
+    start: () => {
+      return new Coor(
+        at.x,
+        at.y
+      )
+    },
+    end: () => {
+      return new Coor(
+        at.x + Math.floor(size.width * term.width()),
+        at.y + Math.floor(size.height * term.height())
+      )
+    }
+  })
+}
+
 
 const mapInteraction = async () => {
   const growthMap = new GrowthMap()
 
   const termRenderer = new TerminalRenderer()
 
-  const width = termRenderer.width()
-  const height = termRenderer.height()
+  // const width = termRenderer.width()
+  // const height = termRenderer.height()
 
-  const middle = {
-    x: Math.floor(width / 2),
-    y: Math.floor(height / 2)
-  }
+  // const middle = {
+  //   x: Math.floor(width / 2),
+  //   y: Math.floor(height / 2)
+  // }
 
-  const viewWidth = width * .9
-  const viewHeight = height * .9
+  // const viewWidth = width * .9
+  // const viewHeight = height * .9
 
-  const halfViewWidth = Math.floor(viewWidth / 2)
-  const halfViewHeight = Math.floor(viewHeight / 2)
+  // const halfViewWidth = Math.floor(viewWidth / 2)
+  // const halfViewHeight = Math.floor(viewHeight / 2)
 
 
-  const term = new TerminalInteractor({
-    start: new Coor(middle.x - halfViewWidth, middle.y - halfViewHeight),
-    end: new Coor(middle.x + halfViewWidth, middle.y + halfViewHeight)
-  })
+  // const term = new TerminalInteractor({
+  //   start: () => new Coor(middle.x - halfViewWidth, middle.y - halfViewHeight),
+  //   end: () => new Coor(middle.x + halfViewWidth, middle.y + halfViewHeight)
+  // })
+
+  const mapInteractor = createInteraction(
+    new Coor(0, 0),
+    new Size(.5, .5),
+    termRenderer
+  )
+
+  //term.border = doublePipeBorder()
 
   const write = (text: string) => {
-    term.write(text)
-    term.return()
+    mapInteractor.write(text)
+    mapInteractor.return()
     termRenderer.render()
   }
 
-  termRenderer.pushInteractor(term)
+  termRenderer.pushInteractor(mapInteractor)
 
   write("growing...")
   
@@ -345,11 +358,11 @@ const mapInteraction = async () => {
 
   while (true) {
     
-    renderMap(term, fullTree, offset)
+    renderMap(mapInteractor, fullTree, offset)
 
     termRenderer.render()
 
-    const key = await term.reactToKeyPress()
+    const key = await mapInteractor.reactToKeyPress()
 
     if (key[0] == 3) {
       process.exit()

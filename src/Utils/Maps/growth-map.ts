@@ -463,7 +463,7 @@ export class Landmass {
 
         let riverStarts: KDTreeInput<LandmassPoint>[] = []
 
-        const numOfRivers = 100
+        const numOfRivers = getRandomNumber(3, 6)
 
         // need to make sure that rives can't use the same point
         // and river than hit another river needs to stop

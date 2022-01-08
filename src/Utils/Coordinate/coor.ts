@@ -39,6 +39,22 @@ export class Coor {
     }
   }
 
+  north() : Coor {
+    return this.getDisplacedCoor(Direction.north)
+  }
+
+  east() : Coor {
+    return this.getDisplacedCoor(Direction.east)
+  }
+
+  south() : Coor {
+    return this.getDisplacedCoor(Direction.south)
+  }
+
+  west() : Coor {
+    return this.getDisplacedCoor(Direction.west)
+  }
+
   ring(distance: number, point: Coor = this) : Array<Coor> {
     const xRange = range(point.x - distance, point.x + distance)
     const yRange = range(point.y - distance, point.y + distance)
